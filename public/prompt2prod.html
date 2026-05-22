@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Prompt 2 Prod</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0d1a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const W = 1280;
+const H = 720;
+canvas.width  = W;
+canvas.height = H;
+
+// ── constants ──────────────────────────────────────────────
+const GROUND_Y = 630;
+
+// Dev / desk
+const DESK_X = 100, DESK_Y = 520, DESK_W = 460, DESK_H = 30;
+const DEV_X  = DESK_X + 220;          // dev sits centered behind desk
+const DEV_HEAD_Y = 230;               // top of head
+const MON_X = DESK_X + 60, MON_Y = 300, MON_W = 320, MON_H = 220;
+const SCR_X = MON_X + 16, SCR_Y = MON_Y + 16, SCR_W = MON_W - 32, SCR_H = MON_H - 56;
+
+// Server rack
+const RACK_X = 940, RACK_Y = 320, RACK_W = 240, RACK_H = 310;
+const PROD_LABEL_Y = RACK_Y - 44;
+
+// ── prompts ───────────────────────────────────────────────
+const PROMPTS = [
+  'ship it',
+  'fix prod plz',
+  'yolo refactor everything',
+  'delete the failing tests',
+  'merge to main',
+  'looks fine to me',
+  'trust me bro',
+  'skip review',
+  'no tests needed',
+  'just deploy it',
+  'rollback later',
+  'idk, push it',
+];
+
+// ── state ─────────────────────────────────────────────────
+let frame = 0;
+let phase = 'typing';        // 'typing' | 'launch' | 'impact' | 'settle' | 'gameover'
+let phaseFrame = 0;
+let promptIdx = 0;
+let shipped = 0;
+let incidents = 0;
+let rocket = null;           // { x, y, vx, vy } during launch
+let smokes = [];             // { x, y, vy, life, max, size }
+let sparks = [];             // { x, y, vx, vy, life }
+let fireIntensity = 0;       // 0..1, grows with incidents
+let gameOverTimer = 0;
+
+const TYPING_FRAMES = 120;
+const LAUNCH_FRAMES = 55;
+const IMPACT_FRAMES = 45;
+const SETTLE_FRAMES = 30;
+const MAX_SHIPMENTS = 12;
+
+function reset() {
+  frame = 0;
+  phase = 'typing';
+  phaseFrame = 0;
+  promptIdx = 0;
+  shipped = 0;
+  incidents = 0;
+  rocket = null;
+  smokes = [];
+  sparks = [];
+  fireIntensity = 0;
+  gameOverTimer = 0;
+}
+
+// ── update ────────────────────────────────────────────────
+function update() {
+  frame++;
+  phaseFrame++;
+
+  // Smoke/sparks always update
+  for (let i = smokes.length - 1; i >= 0; i--) {
+    const s = smokes[i];
+    s.x += Math.sin((s.life + s.x) * 0.04) * 0.4;
+    s.y += s.vy;
+    s.life++;
+    if (s.life > s.max) smokes.splice(i, 1);
+  }
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const sp = sparks[i];
+    sp.x += sp.vx;
+    sp.y += sp.vy;
+    sp.vy += 0.2;
+    sp.life--;
+    if (sp.life <= 0) sparks.splice(i, 1);
+  }
+  // Ambient smoke from rack once on fire
+  if (fireIntensity > 0 && frame % Math.max(4, 30 - (incidents * 2 | 0)) === 0) {
+    spawnSmoke(RACK_X + 30 + Math.random() * (RACK_W - 60), RACK_Y - 4);
+  }
+
+  if (phase === 'gameover') {
+    gameOverTimer++;
+    if (gameOverTimer > 240) reset();
+    return;
+  }
+
+  if (phase === 'typing' && phaseFrame >= TYPING_FRAMES) {
+    phase = 'launch';
+    phaseFrame = 0;
+    // Rocket starts at monitor center, arcs toward rack center
+    const sx = SCR_X + SCR_W / 2;
+    const sy = SCR_Y + SCR_H / 2;
+    const tx = RACK_X + RACK_W / 2;
+    const ty = RACK_Y + 40;
+    const dur = LAUNCH_FRAMES;
+    rocket = {
+      x: sx, y: sy,
+      // velocity to reach (tx, ty) in `dur` frames with simple parabolic arc
+      vx: (tx - sx) / dur,
+      vy: (ty - sy) / dur - 4,   // initial upward boost
+      ax: 0, ay: 8 / dur,        // gravity tuned so it lands on target
+    };
+  } else if (phase === 'launch') {
+    if (rocket) {
+      rocket.x += rocket.vx;
+      rocket.y += rocket.vy;
+      rocket.vy += rocket.ay;
+    }
+    if (phaseFrame >= LAUNCH_FRAMES) {
+      phase = 'impact';
+      phaseFrame = 0;
+      shipped++;
+      // Most prompts cause an incident — but throw a couple "looks fine" reprieves
+      if (Math.random() < 0.85) incidents++;
+      fireIntensity = Math.min(1, incidents / 8);
+      // burst of sparks + smoke
+      for (let i = 0; i < 28; i++) {
+        sparks.push({
+          x: RACK_X + RACK_W / 2,
+          y: RACK_Y + 40,
+          vx: (Math.random() - 0.5) * 10,
+          vy: (Math.random() - 0.5) * 10 - 2,
+          life: 24 + Math.random() * 20 | 0,
+        });
+      }
+      for (let i = 0; i < 8; i++) {
+        spawnSmoke(RACK_X + 20 + Math.random() * (RACK_W - 40), RACK_Y - 4);
+      }
+      rocket = null;
+    }
+  } else if (phase === 'impact') {
+    if (phaseFrame >= IMPACT_FRAMES) {
+      phase = 'settle';
+      phaseFrame = 0;
+    }
+  } else if (phase === 'settle') {
+    if (phaseFrame >= SETTLE_FRAMES) {
+      if (shipped >= MAX_SHIPMENTS) {
+        phase = 'gameover';
+        phaseFrame = 0;
+      } else {
+        phase = 'typing';
+        phaseFrame = 0;
+        promptIdx = (promptIdx + 1) % PROMPTS.length;
+      }
+    }
+  }
+}
+
+function spawnSmoke(x, y) {
+  smokes.push({
+    x, y,
+    vy: -0.6 - Math.random() * 0.4,
+    life: 0,
+    max: 140 + Math.random() * 80 | 0,
+    size: 8 + Math.random() * 6 | 0,
+  });
+}
+
+// ── draw helpers ──────────────────────────────────────────
+function px(text, x, y, size, color, align = 'left', shadow = null) {
+  ctx.save();
+  ctx.font = `bold ${size}px "Courier New", monospace`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'top';
+  ctx.imageSmoothingEnabled = false;
+  if (shadow) { ctx.shadowColor = shadow; ctx.shadowBlur = 12; }
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function drawBg() {
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  sky.addColorStop(0, '#050510');
+  sky.addColorStop(1, '#0d0d2a');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, GROUND_Y);
+
+  // Stars
+  for (let i = 0; i < 100; i++) {
+    const sx = (i * 137.5 + 42) % W;
+    const sy = (i * 83.3 + 15) % (GROUND_Y * 0.7);
+    const twinkle = Math.sin(frame * 0.04 + i * 1.3) > 0.6;
+    ctx.fillStyle = twinkle ? 'rgba(255,255,220,0.9)' : 'rgba(255,255,220,0.3)';
+    ctx.fillRect(sx | 0, sy | 0, twinkle ? 2 : 1, twinkle ? 2 : 1);
+  }
+
+  // Ground
+  ctx.fillStyle = '#0f1a0f';
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillStyle = '#1a2e1a';
+  ctx.fillRect(0, GROUND_Y, W, 3);
+
+  // Ground grid (retro floor)
+  ctx.strokeStyle = 'rgba(0,255,65,0.07)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = GROUND_Y; y < H; y += 20) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+}
+
+function drawDesk() {
+  // Desk shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(DESK_X + 6, DESK_Y + DESK_H, DESK_W, 10);
+
+  // Desk top
+  ctx.fillStyle = '#3a2a1a';
+  ctx.fillRect(DESK_X, DESK_Y, DESK_W, DESK_H);
+  ctx.fillStyle = '#5a3a22';
+  ctx.fillRect(DESK_X, DESK_Y, DESK_W, 4);
+
+  // Desk legs (visible at edges)
+  ctx.fillStyle = '#2a1a0a';
+  ctx.fillRect(DESK_X + 10, DESK_Y + DESK_H, 14, GROUND_Y - (DESK_Y + DESK_H));
+  ctx.fillRect(DESK_X + DESK_W - 24, DESK_Y + DESK_H, 14, GROUND_Y - (DESK_Y + DESK_H));
+
+  // Keyboard on near edge of desk
+  const kbX = DESK_X + 120, kbY = DESK_Y - 8, kbW = 220, kbH = 14;
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(kbX, kbY, kbW, kbH);
+  ctx.fillStyle = '#333';
+  for (let i = 0; i < 12; i++) {
+    ctx.fillRect(kbX + 6 + i * 18, kbY + 3, 12, 8);
+  }
+}
+
+function drawMonitor() {
+  // Bezel
+  ctx.fillStyle = '#111';
+  ctx.fillRect(MON_X, MON_Y, MON_W, MON_H);
+  ctx.strokeStyle = '#2a2a2a';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(MON_X, MON_Y, MON_W, MON_H);
+
+  // Stand
+  ctx.fillStyle = '#222';
+  ctx.fillRect(MON_X + MON_W / 2 - 16, MON_Y + MON_H, 32, 18);
+  ctx.fillRect(MON_X + MON_W / 2 - 40, MON_Y + MON_H + 14, 80, 6);
+
+  // Screen
+  ctx.fillStyle = '#020a04';
+  ctx.fillRect(SCR_X, SCR_Y, SCR_W, SCR_H);
+
+  // Screen scanline tint
+  ctx.fillStyle = 'rgba(0,255,65,0.03)';
+  for (let y = SCR_Y; y < SCR_Y + SCR_H; y += 2) {
+    ctx.fillRect(SCR_X, y, SCR_W, 1);
+  }
+
+  // Prompt text (typing)
+  const prompt = PROMPTS[promptIdx];
+  let visible = '';
+  if (phase === 'typing') {
+    const cps = prompt.length / TYPING_FRAMES;
+    visible = prompt.slice(0, Math.min(prompt.length, Math.ceil(phaseFrame * cps * 1.05)));
+  } else {
+    visible = prompt;
+  }
+
+  const lineY = SCR_Y + 18;
+  ctx.font = 'bold 18px "Courier New", monospace';
+  ctx.textBaseline = 'top';
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#7af784';
+  ctx.fillText('user@yolo:~$', SCR_X + 12, lineY);
+
+  ctx.fillStyle = '#d9ffd9';
+  ctx.fillText(visible, SCR_X + 12, lineY + 28);
+
+  // Blinking cursor
+  if ((frame >> 4) & 1) {
+    const measured = ctx.measureText(visible).width;
+    ctx.fillStyle = '#d9ffd9';
+    ctx.fillRect(SCR_X + 12 + measured + 2, lineY + 28, 10, 18);
+  }
+
+  // "ENTER" hint or "SENT" label after typing
+  if (phase !== 'typing' && phase !== 'gameover') {
+    ctx.fillStyle = '#ff6b6b';
+    ctx.font = 'bold 16px "Courier New", monospace';
+    ctx.fillText('> deploying...', SCR_X + 12, lineY + 64);
+  }
+}
+
+function drawDev() {
+  const p = 4;
+  // Typing animation: hands alternate up/down every 6 frames during typing
+  const typing = phase === 'typing';
+  const hStep = typing ? ((frame / 6 | 0) % 2) : 0;
+  const handAOffset = typing ? (hStep === 0 ? 0 : -p) : 0;
+  const handBOffset = typing ? (hStep === 0 ? -p : 0) : 0;
+
+  const cx = DEV_X | 0;
+  const by = DEV_HEAD_Y | 0;
+
+  // ── head ──
+  ctx.fillStyle = '#f4c27a';
+  ctx.fillRect(cx - 5*p, by, 10*p, 10*p);
+
+  // hair — spiky
+  ctx.fillStyle = '#2d1f14';
+  ctx.fillRect(cx - 5*p, by,        10*p, 2*p);
+  // spikes on top
+  ctx.fillRect(cx - 4*p, by - p,    2*p,  p);
+  ctx.fillRect(cx - p,   by - 2*p,  2*p,  2*p);
+  ctx.fillRect(cx + 2*p, by - p,    2*p,  p);
+  // sideburns
+  ctx.fillRect(cx - 5*p, by,        p,    5*p);
+  ctx.fillRect(cx + 4*p, by,        p,    5*p);
+
+  // ── sunglasses ──
+  // bar
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(cx - 5*p, by + 3*p, 10*p, 3*p);
+  // lens body (slightly thicker over eye area)
+  ctx.fillRect(cx - 4*p, by + 2*p, 3*p, p);
+  ctx.fillRect(cx + p,   by + 2*p, 3*p, p);
+  // reflective highlight on each lens
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(cx - 3*p, by + 4*p, p, p);
+  ctx.fillRect(cx + 2*p, by + 4*p, p, p);
+
+  // smirk
+  ctx.fillStyle = '#7a3a2a';
+  ctx.fillRect(cx - 2*p, by + 8*p, 4*p, p);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(cx + 1*p, by + 8*p, 2*p, p);
+
+  // ── neck ──
+  ctx.fillStyle = '#e2a560';
+  ctx.fillRect(cx - 2*p, by + 10*p, 4*p, 2*p);
+
+  // ── body / hoodie ──
+  const bodyY = by + 12*p;
+  const bodyH = (DESK_Y - bodyY);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(cx - 7*p, bodyY, 14*p, bodyH);
+  // hoodie zip
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(cx - p, bodyY, 2*p, bodyH - 4);
+  // hood/collar
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(cx - 7*p, bodyY, 14*p, 2*p);
+
+  // ── arms forward to keyboard ──
+  // Upper arms go down from shoulders, forearms angle out toward keyboard
+  const shL = cx - 7*p, shR = cx + 5*p;
+  const shY = bodyY + 2*p;
+  // upper arms
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(shL,         shY,         2*p, 8*p);
+  ctx.fillRect(shR,         shY,         2*p, 8*p);
+  // forearms slanting outward to hand positions
+  ctx.fillRect(shL - p,     shY + 8*p,   3*p, 4*p);
+  ctx.fillRect(shR,         shY + 8*p,   3*p, 4*p);
+
+  // hands on keyboard
+  const kbY = DESK_Y - 8;
+  const handL_X = cx - 9*p;
+  const handR_X = cx + 6*p;
+  ctx.fillStyle = '#f4c27a';
+  ctx.fillRect(handL_X, kbY - 2 + handAOffset, 3*p, 3*p);
+  ctx.fillRect(handR_X, kbY - 2 + handBOffset, 3*p, 3*p);
+
+  // ── chair back peeking above body shoulders ──
+  ctx.fillStyle = '#222';
+  ctx.fillRect(cx - 8*p, bodyY + 4*p, p, bodyH);
+  ctx.fillRect(cx + 7*p, bodyY + 4*p, p, bodyH);
+}
+
+function drawProdRack() {
+  // Backplate / dark cabinet
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(RACK_X - 6, RACK_Y - 6, RACK_W + 12, RACK_H + 12);
+  ctx.fillStyle = '#0a0a18';
+  ctx.fillRect(RACK_X, RACK_Y, RACK_W, RACK_H);
+
+  // Chassis units
+  const units = 4;
+  const uH = (RACK_H - 20) / units;
+  for (let i = 0; i < units; i++) {
+    const uy = RACK_Y + 10 + i * uH;
+    // chassis body
+    ctx.fillStyle = '#15151f';
+    ctx.fillRect(RACK_X + 10, uy, RACK_W - 20, uH - 6);
+    // top trim
+    ctx.fillStyle = '#2a2a40';
+    ctx.fillRect(RACK_X + 10, uy, RACK_W - 20, 3);
+    // drive bays
+    ctx.fillStyle = '#0a0a12';
+    for (let j = 0; j < 5; j++) {
+      ctx.fillRect(RACK_X + 22 + j * 22, uy + 10, 16, uH - 24);
+    }
+    // LEDs (blink deterministically)
+    for (let j = 0; j < 6; j++) {
+      const lit = Math.sin(frame * 0.18 + i * 2.1 + j * 1.7) > (incidents > 4 ? 0.1 : 0.4);
+      const failing = incidents > 6 && ((i + j) % 3 === 0);
+      ctx.fillStyle = failing
+        ? (lit ? '#ff3344' : '#440a10')
+        : (lit ? '#4ade80' : '#0a3a18');
+      ctx.fillRect(RACK_X + RACK_W - 28 + (j % 3) * 6, uy + 6 + (j / 3 | 0) * 6, 3, 3);
+    }
+  }
+
+  // PROD label panel above
+  ctx.fillStyle = '#220a0a';
+  ctx.fillRect(RACK_X - 10, PROD_LABEL_Y, RACK_W + 20, 32);
+  ctx.fillStyle = '#3a0d0d';
+  ctx.fillRect(RACK_X - 10, PROD_LABEL_Y, RACK_W + 20, 4);
+  ctx.save();
+  ctx.font = 'bold 22px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#ff2222';
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = '#ff6b6b';
+  ctx.fillText('★  PROD  ★', RACK_X + RACK_W / 2, PROD_LABEL_Y + 16);
+  ctx.restore();
+
+  // Fire on top of rack (flicker), grows with incidents
+  if (fireIntensity > 0) {
+    const flames = 4 + (incidents | 0);
+    for (let i = 0; i < flames; i++) {
+      const fx = RACK_X + 16 + i * ((RACK_W - 32) / flames) + Math.sin(frame * 0.3 + i) * 2;
+      const fh = 14 + Math.abs(Math.sin(frame * 0.25 + i * 1.7)) * (14 + incidents * 2);
+      // outer (orange)
+      ctx.fillStyle = '#ff8a2c';
+      ctx.fillRect(fx, RACK_Y - fh, 8, fh);
+      // inner (yellow)
+      ctx.fillStyle = '#ffd93b';
+      ctx.fillRect(fx + 2, RACK_Y - fh + 4, 4, fh - 4);
+    }
+  }
+}
+
+function drawSmokeAndSparks() {
+  // Smoke (drawn over rack and into sky)
+  for (const s of smokes) {
+    const t = s.life / s.max;
+    const alpha = (1 - t) * 0.55;
+    const size = s.size + t * 8 | 0;
+    ctx.fillStyle = `rgba(120,120,130,${alpha})`;
+    ctx.fillRect(s.x | 0, s.y | 0, size, size);
+    ctx.fillStyle = `rgba(60,60,70,${alpha * 0.6})`;
+    ctx.fillRect((s.x | 0) + 2, (s.y | 0) + 2, size - 2, size - 2);
+  }
+  // Sparks from impact
+  for (const sp of sparks) {
+    const a = Math.min(1, sp.life / 20);
+    ctx.fillStyle = a > 0.5 ? '#ffd93b' : '#ff8a2c';
+    ctx.globalAlpha = a;
+    ctx.fillRect(sp.x | 0, sp.y | 0, 3, 3);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawRocket() {
+  if (!rocket) return;
+  const r = rocket;
+  // Trail
+  for (let i = 1; i < 8; i++) {
+    const tx = r.x - r.vx * i;
+    const ty = r.y - (r.vy - r.ay * i) * i + (r.ay * i * i) / 2;
+    ctx.fillStyle = `rgba(255,200,80,${0.35 * (1 - i / 8)})`;
+    ctx.fillRect(tx - 3, ty - 3, 6, 6);
+  }
+  // Body — a PR card with rocket flames
+  ctx.save();
+  ctx.translate(r.x, r.y);
+  const angle = Math.atan2(r.vy, r.vx);
+  ctx.rotate(angle);
+  // package
+  ctx.fillStyle = '#7c2d12';
+  ctx.fillRect(-22, -10, 44, 20);
+  ctx.fillStyle = '#f97316';
+  ctx.fillRect(-22, -10, 44, 4);
+  // bolt
+  ctx.fillStyle = '#ffd93b';
+  ctx.fillRect(-3, -5, 6, 10);
+  // tail flame
+  ctx.fillStyle = '#ff8a2c';
+  ctx.fillRect(-32, -6, 10, 12);
+  ctx.fillStyle = '#ffd93b';
+  ctx.fillRect(-30, -3, 6, 6);
+  ctx.restore();
+}
+
+function drawHUD() {
+  // Top bar
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, 54);
+
+  // Title
+  ctx.save();
+  ctx.font = 'bold 28px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#ff4444';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = '#ff6b6b';
+  ctx.fillText('★  PROMPT 2 PROD  ★', W / 2, 27);
+  ctx.restore();
+
+  px(`PROMPTS SHIPPED: ${String(shipped).padStart(4, '0')}`, 24, 10, 18, '#00ff41', 'left', '#00ff41');
+  px(`INCIDENTS: ${String(incidents).padStart(2, '0')}`, W - 24, 10, 18, '#ffcc00', 'right', '#ffcc00');
+}
+
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
+  const v = ctx.createRadialGradient(W/2, H/2, H*0.25, W/2, H/2, H*0.85);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawGameOver() {
+  const a = Math.min(1, gameOverTimer / 40);
+  ctx.fillStyle = `rgba(0,0,0,${a * 0.75})`;
+  ctx.fillRect(0, 0, W, H);
+
+  if (gameOverTimer < 25) return;
+
+  const flash = (gameOverTimer / 6 | 0) % 2 === 0;
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  if (flash) {
+    ctx.font = 'bold 96px "Courier New", monospace';
+    ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 50;
+    ctx.fillStyle = '#ff2222';
+    ctx.fillText('PROD DOWN', W/2, H/2 - 80);
+  }
+
+  ctx.font = 'bold 28px "Courier New", monospace';
+  ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 12;
+  ctx.fillStyle = '#ffcc00';
+  ctx.fillText(`${incidents} incidents · ${shipped} prompts shipped`, W/2, H/2 + 10);
+
+  ctx.font = 'bold 22px "Courier New", monospace';
+  ctx.fillStyle = '#7af784'; ctx.shadowColor = '#00ff41'; ctx.shadowBlur = 10;
+  const cursor = (gameOverTimer >> 3) & 1 ? '▮' : ' ';
+  ctx.fillText(`ROLLBACK?? (Y/N) ${cursor}`, W/2, H/2 + 70);
+
+  ctx.restore();
+}
+
+// ── main loop ─────────────────────────────────────────────
+function loop() {
+  update();
+
+  ctx.clearRect(0, 0, W, H);
+  drawBg();
+
+  // Smoke behind the rack reads as depth — draw older/back smoke first
+  // (We draw all smoke after the rack here to keep it simple; alpha handles depth feel)
+  drawProdRack();
+  drawSmokeAndSparks();
+
+  // Desk + dev + monitor (foreground left)
+  drawDesk();
+  drawDev();
+  drawMonitor();
+
+  // Rocket on top
+  drawRocket();
+
+  drawHUD();
+  drawScanlines();
+
+  if (phase === 'gameover') drawGameOver();
+
+  requestAnimationFrame(loop);
+}
+
+reset();
+loop();
+</script>
+</body>
+</html>
