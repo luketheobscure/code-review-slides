@@ -2,8 +2,6 @@
 
 A reveal.js slide deck built with Vite.
 
-**Live:** https://luketheobscure.github.io/code-review-slides/
-
 ## View the slides
 
 Install dependencies and start the dev server:
@@ -23,10 +21,6 @@ pnpm preview
 ```
 
 The static output lands in `dist/`.
-
-## Deploy
-
-Pushes to `master` deploy automatically via `.github/workflows/deploy.yml`. One-time setup in the repo: **Settings → Pages → Source: GitHub Actions**.
 
 ## Navigation
 
