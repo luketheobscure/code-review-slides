@@ -3,14 +3,16 @@
   <h2>Invest in verification.</h2>
   <ul class="future-list">
     <li>Review asks: does this code <em>look</em> right? Verification asks: does it <em>behave</em> correctly?</li>
-    <li>Generate tests from your <em>acceptance criteria</em>, let the requirements define the bar, not the implementation</li>
+    <li>Generate tests from your <em>acceptance criteria</em>, let the requirements define the bar, not the
+      implementation</li>
     <li>Tools like Rovo Dev and Qodo check the PR against the linked ticket (or roll your own)</li>
   </ul>
   <aside class="notes">
     Review and verification are different things. Review asks: does this code look right?
     Verification asks: does it actually behave correctly — and does it do what was actually asked?
 
-    One of the best uses of AI in testing: feed it your acceptance criteria and let it write the tests before the code ships.
+    One of the best uses of AI in testing: feed it your acceptance criteria and let it write the tests before the code
+    ships.
     The requirements become the test suite. That's a fundamentally different bar than "does this diff look fine."
 
     Prefer integration and E2E tests — AI can game unit tests because it was trained on code that passes unit tests.
