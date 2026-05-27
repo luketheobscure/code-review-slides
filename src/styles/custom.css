@@ -1811,3 +1811,59 @@
   font-style: normal;
   font-weight: 700;
 }
+
+.reveal .thanks-slide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2em;
+  height: 100%;
+}
+
+.reveal .thanks-title {
+  font-size: 2.4em;
+  margin: 0;
+}
+
+.reveal .thanks-qrs {
+  display: flex;
+  gap: 3em;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.reveal .thanks-qr {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15em;
+}
+
+.reveal .thanks-qr img {
+  width: 260px;
+  height: 260px;
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  display: block;
+}
+
+.reveal .thanks-qr figcaption {
+  font-size: 0.55em;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.reveal .thanks-hiring {
+  font-size: 0.8em;
+  color: var(--muted);
+  margin: 1.8em 0 0;
+}
+
+.reveal .thanks-hiring a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
