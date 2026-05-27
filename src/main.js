@@ -79,14 +79,16 @@ Reveal.initialize({
     <circle cx="32" cy="19.6" r="1.1" fill="#ff7bf0"/>
     <circle cx="46" cy="19" r="1.1" fill="#67e8f9"/>
   </svg>`;
-  document.querySelectorAll('section.future-theme').forEach(section => {
-    if (section.querySelector('.future-ufo')) return;
-    const ufo = document.createElement('div');
-    ufo.className = 'future-ufo';
-    ufo.setAttribute('aria-hidden', 'true');
-    ufo.innerHTML = ufoSvg;
-    section.appendChild(ufo);
-  });
+  const ufoEl = document.createElement('div');
+  ufoEl.className = 'future-ufo';
+  ufoEl.setAttribute('aria-hidden', 'true');
+  ufoEl.innerHTML = ufoSvg;
+  document.querySelector('.reveal').appendChild(ufoEl);
+
+  const syncUfo = (slide) => {
+    ufoEl.classList.toggle('visible', !!slide?.classList.contains('future-theme'));
+  };
+  syncUfo(Reveal.getCurrentSlide());
 
   document.querySelectorAll('section[data-slide="past-future"]').forEach(section => {
     const controllers = [];
@@ -118,6 +120,8 @@ Reveal.initialize({
   });
 
   Reveal.on('slidechanged', ({ currentSlide }) => {
+    syncUfo(currentSlide);
+
     const pf = pfControllers.get(currentSlide);
     if (pf) pf.forEach(c => c.reset());
 
