@@ -51,7 +51,7 @@ document.querySelector('.slides').innerHTML = slides.join('\n');
 const TOC_VARIANT_CONFIG = {
   theory:     { initialConstrained: true, initialShowSDLC: false, initialSpawnMs: 300, prefillCount: 0,  narrowRadius: 22, showConstraintMarker: true,  spawnPerCycle: 3 },
   subtle:     { initialConstrained: true, initialShowSDLC: false, initialSpawnMs: 140, prefillCount: 0,  narrowRadius: 56, showConstraintMarker: false, spawnPerCycle: 1 },
-  codereview: { initialConstrained: true, initialShowSDLC: false, initialSpawnMs: 60,  prefillCount: 0,  narrowRadius: 22, showConstraintMarker: false, spawnPerCycle: 1, leftWideRadius: 115, constraintLabel: '◆  CODE REVIEW' },
+  codereview: { initialConstrained: true, initialShowSDLC: false, initialSpawnMs: 60,  prefillCount: 0,  narrowRadius: 32, showConstraintMarker: false, spawnPerCycle: 1, leftWideRadius: 115, constraintLabel: '◆  CODE REVIEW', extraConstriction: { x0: 130, x1: 270, radius: 22 } },
 };
 
 const tocControllers = new Map();
@@ -136,6 +136,10 @@ Reveal.initialize({
     const entry   = tocControllers.get(section);
     if (!entry) return;
     if (action === 'label-constraint') entry.controller.setShowConstraintMarker(on);
+    if (action === 'reveal-codereview') {
+      entry.controller.setExtraConstriction(on ? null : entry.config.extraConstriction);
+      entry.controller.setShowConstraintMarker(on);
+    }
   }
   Reveal.on('fragmentshown',  ({ fragment }) => applyFragment(fragment, true));
   Reveal.on('fragmenthidden', ({ fragment }) => applyFragment(fragment, false));

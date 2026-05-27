@@ -25,12 +25,13 @@ const SDLC_STAGES = [
   { label: 'Production',   x0: 760, x1: 920, color: 'rgba(154,205,108,0.22)' },
 ];
 
-export function createToC({ canvas, refs = {}, initialConstrained = true, initialShowSDLC = false, initialSpawnMs = DEFAULT_SPAWN_MS, prefillCount = 0, narrowRadius = NAR_R, showConstraintMarker: initialShowConstraintMarker = true, constraintLabel = '◆  CONSTRAINT  (bottleneck)', spawnPerCycle = 3, leftWideRadius = WIDE_R }) {
+export function createToC({ canvas, refs = {}, initialConstrained = true, initialShowSDLC = false, initialSpawnMs = DEFAULT_SPAWN_MS, prefillCount = 0, narrowRadius = NAR_R, showConstraintMarker: initialShowConstraintMarker = true, constraintLabel = '◆  CONSTRAINT  (bottleneck)', spawnPerCycle = 3, leftWideRadius = WIDE_R, extraConstriction: initialExtraConstriction = null }) {
   const ctx = canvas.getContext('2d');
   let constrained          = initialConstrained;
   let showSDLC             = initialShowSDLC;
   let showConstraintMarker = initialShowConstraintMarker;
   let spawnMs              = initialSpawnMs;
+  let extraConstriction    = initialExtraConstriction;
   const topR = Math.max(leftWideRadius, WIDE_R);
   let particles   = [];
   let lastSpawnMs = 0;
@@ -39,12 +40,27 @@ export function createToC({ canvas, refs = {}, initialConstrained = true, initia
   let pipeCache   = null;
 
   function pipeR(x) {
-    if (!constrained) return x < XCS ? leftWideRadius : WIDE_R;
-    if (x <= XCS) return leftWideRadius;
-    if (x >= XCE) return WIDE_R;
-    const t = (x - XCS) / (XCE - XCS);
-    const e = t < .5 ? 2*t*t : 1 - (-2*t+2)**2/2;
-    return leftWideRadius + (narrowRadius - leftWideRadius) * e;
+    let r;
+    if (!constrained) r = x < XCS ? leftWideRadius : WIDE_R;
+    else if (x <= XCS) r = leftWideRadius;
+    else if (x >= XCE) r = WIDE_R;
+    else {
+      const t = (x - XCS) / (XCE - XCS);
+      const e = t < .5 ? 2*t*t : 1 - (-2*t+2)**2/2;
+      r = leftWideRadius + (narrowRadius - leftWideRadius) * e;
+    }
+
+    if (extraConstriction) {
+      const { x0, x1, radius } = extraConstriction;
+      if (x > x0 && x < x1) {
+        const t = (x - x0) / (x1 - x0);
+        const bump = 0.5 * (1 - Math.cos(t * 2 * Math.PI)); // 0 at edges, 1 at center
+        const baseR = Math.min(leftWideRadius, r);
+        const targetR = baseR + (radius - baseR) * bump;
+        r = Math.min(r, targetR);
+      }
+    }
+    return r;
   }
 
   function buildPipeCache() {
@@ -274,10 +290,10 @@ export function createToC({ canvas, refs = {}, initialConstrained = true, initia
       ctx.fillStyle = `hsl(${hue},${sat}%,${lit}%)`;
       ctx.fill();
 
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, PR * 2.6);
-      g.addColorStop(0, `hsla(${hue},80%,70%,.18)`); g.addColorStop(1, `hsla(${hue},80%,70%,0)`);
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, PR * 1.8);
+      g.addColorStop(0, `hsla(${hue},80%,70%,.08)`); g.addColorStop(1, `hsla(${hue},80%,70%,0)`);
       ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(p.x, p.y, PR * 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, PR * 1.8, 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
   }
@@ -348,6 +364,11 @@ export function createToC({ canvas, refs = {}, initialConstrained = true, initia
   function setShowSDLC(v) { showSDLC = v; }
   function setShowConstraintMarker(v) { showConstraintMarker = v; }
   function setSpawnMs(v)  { spawnMs = v; }
+  function setExtraConstriction(v) {
+    extraConstriction = v;
+    pipeCache = null;
+    buildPipeCache();
+  }
 
   function reset() {
     particles            = [];
@@ -357,10 +378,13 @@ export function createToC({ canvas, refs = {}, initialConstrained = true, initia
     showSDLC             = initialShowSDLC;
     showConstraintMarker = initialShowConstraintMarker;
     spawnMs              = initialSpawnMs;
+    extraConstriction    = initialExtraConstriction;
+    pipeCache            = null;
+    buildPipeCache();
     for (let i = 0; i < prefillCount; i++) {
       spawn(particles.filter(p => !p.passed && p.x < XC).length);
     }
   }
 
-  return { init, setConstrained, setShowSDLC, setShowConstraintMarker, setSpawnMs, reset };
+  return { init, setConstrained, setShowSDLC, setShowConstraintMarker, setSpawnMs, setExtraConstriction, reset };
 }
